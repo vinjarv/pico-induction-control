@@ -3,8 +3,10 @@
 #include <hardware/adc.h>
 
 const int INDICATOR_PIN = LED_BUILTIN;
-const uint16_t DCBUS_TRESHOLD = 1000;
 
+uint16_t negative_treshold = (2^12 / 2) + 50; // Below this value current should be passing through the body diode of the IGBT
+                                              //TODO: Compute live based on AC voltage
+                                      
 // Code for calculating Mean Absolute Deviation of input signal for pan detection
 const uint16_t N_SAMPLES = 500;           // 1ms at 500ksps = 500 samples
 uint16_t input_buffer[N_SAMPLES];         // Buffer to store input samples
@@ -68,6 +70,8 @@ void loop() {
       pan_detection_on = true;
     }
   }
+    // Indicate if current voltage is below threshold
+    digitalWrite(INDICATOR_PIN, cycle_negative);
 }
 
 
@@ -102,7 +106,7 @@ void my_adc_irq() {
   moving_avg = (avg_buffer[0] + avg_buffer[1]) / 2; // Division by powers of two should be fast, as it is just a bit shift
 
   // Indicate if current voltage is below threshold
-  cycle_negative = moving_avg < DCBUS_TRESHOLD;
+  cycle_negative = moving_avg < negative_treshold;
   
   // Increment the shared variable to count how many times this IRQ was executed
   shared_var++;
