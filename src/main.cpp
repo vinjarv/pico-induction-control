@@ -1,9 +1,19 @@
 #include <Arduino.h>
 #include <pico.h>
 #include <hardware/adc.h>
+#include <hardware/pwm.h>
+#include <hardware/gpio.h>
 
-uint16_t negative_treshold = (4096 / 2) + 50; // Below this value current should be passing through the body diode of the IGBT
-                                              //TODO: Compute live based on AC voltage
+#include <TempSensor.h>
+
+
+// Pin definitions 
+const int FAN_PIN = D2;
+const int IGBT_GATE_PIN = D3;
+const int CHARGE_PUMP_PIN = D4; 
+const int THERMOCOUPLE_1W_PIN = D5;
+const int COIL_MONITOR_PIN = A0;
+const int AC_MONITOR_PIN = A1;
                            
 // Code for calculating Mean Absolute Deviation of input signal for pan detection
 const uint16_t N_SAMPLES = 500;           // 1ms at 500ksps = 500 samples
@@ -11,6 +21,8 @@ uint16_t input_buffer[N_SAMPLES];         // Buffer to store input samples
 uint32_t input_accumulator = 0;           // Accumulator for calculating mean
 uint16_t input_buffer_index = 0;          // Index of the input buffer
 bool pan_detection_on = false;            // Start bit
+
+TempSensor thermocouple(THERMOCOUPLE_1W_PIN);
 
 //
 // ---- Core 0 ----
@@ -34,29 +46,37 @@ void computeMAD() {
   Serial.println(mad);
 }
 
+// Initialize PWM for charge pump output pin
+// Frequency should be around 1.5kHz
+// Duty cycle 50%, but precision is not required for this circuit
+void start_charge_pump() {
+  const uint freq = 1500;     // PWM frequency
+  const uint div = 256;       // Clock divider, 1-255
+
+  uint top = uint((133e6 / div) / freq);
+  uint slice = pwm_gpio_to_slice_num(CHARGE_PUMP_PIN);
+  uint chan = pwm_gpio_to_channel(CHARGE_PUMP_PIN);
+  gpio_set_function(CHARGE_PUMP_PIN, GPIO_FUNC_PWM);
+  pwm_set_clkdiv(slice, div);
+  pwm_set_wrap(slice, top); 
+  pwm_set_chan_level(slice, chan, top/2);
+  pwm_set_enabled(slice, true);
+}
 
 void setup() {
   Serial.begin(115200);
   Serial.println("Hello World!");
 
-  pan_detection_on = true; // Start sampling loop
+  start_charge_pump();              // Initialize charge pump PWM to generate negative rail for opamp
+  gpio_set_dir(FAN_PIN, GPIO_OUT);  
+
+  adc_init();
+  adc_gpio_init(COIL_MONITOR_PIN);
+  adc_gpio_init(AC_MONITOR_PIN);
 }
 
 void loop() {
-  static long last_time = millis();
-  long current_time = millis();
-  if (last_time + 1000 < current_time){
-    last_time = current_time;
-
-    if (!pan_detection_on) {
-      // Get MAD and start next sampling
-      computeMAD();
-      pan_detection_on = true; // Restart
-      for(int i = 0; i < N_SAMPLES; i++) {
-        Serial.println(input_buffer[i]); 
-      }
-    }
-  }
+  ;
 }
 
 
